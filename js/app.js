@@ -1,4 +1,22 @@
-import { listings } from "./data.js";
+// BoardingEase — Week 5 end state
+//
+// Same DOM code the class already has -- including its existing
+// rough edges (see the Week 5 walkthrough doc for the full list).
+// What changed: every piece of state and every business-logic
+// function moved to model.js. app.js now only reads state.* and
+// calls model.js's functions -- it never computes a cost or decides
+// what "filtered" means anymore.
+
+import {
+  state,
+  selectedListing,
+  getCostBreakdown,
+  setSearchTerm,
+  setMaxRent,
+  selectListing,
+  setOccupants,
+  toggleTransport,
+} from "./model.js";
 
 // ELEMENTS
 const resultsList = document.querySelector(".results__list");
@@ -7,68 +25,16 @@ const searchCount = document.querySelector(".search__count");
 const fieldInput = document.querySelector(".field__input");
 const maxRentInput = document.querySelector("#max-rent");
 const searchForm = document.querySelector("#search-form");
+// NOT TOUCHED THIS WEEK: index.html has no #sharing-with element, so
+// this is null and unused, same as before the extraction. View-layer
+// cleanup is weeks 6-7's job, not this one.
 const sharingWithInput = document.querySelector("#sharing-with");
-
-// STATE
-let newListings = listings;
-let selectedId = null;
-let occupants = 1;
-let includeTransport = false;
-
-const SCHOOL_DAYS_PER_MONTH = 22;
 
 const peso = new Intl.NumberFormat("en-PH", {
   style: "currency",
   currency: "PHP",
   maximumFractionDigits: 0,
 });
-
-const applyFilters = () => {
-  const query = fieldInput.value.toLowerCase().trim();
-  const maxRent = maxRentInput.value;
-
-  newListings = listings.filter((listing) => {
-    const matchesQuery =
-      query === "" || listing.name.toLowerCase().includes(query);
-
-    const matchesRent =
-      maxRent === "" || listing.monthlyRent <= Number(maxRent);
-
-    return matchesQuery && matchesRent;
-  });
-
-  results();
-};
-
-const sumUtilities = ({ electricity = 0, water = 0, internet = 0 }) =>
-  electricity + water + internet;
-
-const calculateCostPerHead = (listing, people, withTransport) => {
-  if (!Number.isInteger(people) || people < 1)
-    throw new Error("Number od occupants must be a whole number, at least 1.");
-  if (people > listing.maxOccupants)
-    throw new Error(
-      `This listing allows at most ${listing.maxOccupants} occupants`,
-    );
-
-  const rentPerHead = listing.monthlyRent / people;
-
-  const utilitiesPerHead = listing.utilitiesIncluded
-    ? 0
-    : sumUtilities(listing.estimatedUtilities) / people;
-
-  const transportPerHead = withTransport
-    ? listing.fareOneWay * 2 * SCHOOL_DAYS_PER_MONTH
-    : 0;
-
-  return {
-    rentPerHead,
-    utilitiesPerHead,
-    transportPerHead,
-    totalPerHead: rentPerHead + utilitiesPerHead,
-    transportPerHead,
-  };
-};
 
 const markupGenerator = (listing) => {
   // Gi destructure nato dire ang object
@@ -124,7 +90,7 @@ const markupGenerator = (listing) => {
 };
 
 const results = () => {
-  if (newListings.length === 0) {
+  if (state.filtered.length === 0) {
     resultsList.innerHTML = `<li class="empty">
               No listings match that search. Try a barangay name.
             </li>`;
@@ -132,14 +98,18 @@ const results = () => {
     searchCount.textContent = "0 listings found";
   }
 
-  resultsList.innerHTML = newListings.map(markupGenerator).join("");
+  resultsList.innerHTML = state.filtered.map(markupGenerator).join("");
 };
 
-const breakdownContent = (listing) => {
-  const { rentPerHead, utilitiesPerHead, transportPerHead, totalPerHead } =
-    calculateCostPerHead(listing, occupants, includeTransport);
+const breakdownContent = () => {
+  try {
+    const breakdown = getCostBreakdown();
+    if (!breakdown) return "";
 
-  return `
+    const { rentPerHead, utilitiesPerHead, transportPerHead, totalPerHead } =
+      breakdown;
+
+    return `
     <p class="breakdown__line">
       <span>Rent</span><span>${peso.format(rentPerHead)}</span>
     </p>
@@ -153,6 +123,12 @@ const breakdownContent = (listing) => {
       <span>Per person</span><span>${peso.format(totalPerHead)}</span>
     </p>
     `;
+  } catch (err) {
+    // model.js threw -- deciding what to show is our job at the call
+    // site. app.js didn't have this catch before; adding it is the
+    // natural side effect of routing this call through getCostBreakdown().
+    return `<p class="error">${err.message}</p>`;
+  }
 };
 
 const detailMarkUpGenerator = (listing) => {
@@ -172,27 +148,24 @@ const detailMarkUpGenerator = (listing) => {
                 id="occupants-demo"
                 min="1"
                 max="${maxOccupants}"
-                value="${occupants}"
+                value="${state.occupants}"
               />
             </div>
 
             <div class="splitter__row">
               <label for="transport-demo">Include daily fare</label>
-              <input type="checkbox" id="transport-demo" ${includeTransport ? "checked" : ""} />
+              <input type="checkbox" id="transport-demo" ${state.includeTransport ? "checked" : ""} />
             </div>
           </fieldset>
 
           <div class="breakdown">
-            ${breakdownContent(listing)}
+            ${breakdownContent()}
           </div>        
   `;
 };
 
-const selectedListing = () =>
-  listings.find((listing) => listing.id === selectedId);
-
 const renderDetail = () => {
-  if (!selectedId) {
+  if (!state.selectedId) {
     detailsContainer.innerHTML = `<p class="detail__empty">Select a listing to see the cost breakdown.</p>`;
     return;
   }
@@ -210,11 +183,9 @@ const renderDetail = () => {
 const updateBreakdown = () => {
   const breakdown = detailsContainer.querySelector(".breakdown");
   if (!breakdown) return;
+  if (!selectedListing()) return;
 
-  const listing = selectedListing();
-  if (!listing) return;
-
-  breakdown.innerHTML = breakdownContent(listing);
+  breakdown.innerHTML = breakdownContent();
 };
 
 // EVENT LISTENERS
@@ -224,12 +195,8 @@ resultsList.addEventListener("click", (event) => {
 
   if (!card) return;
 
-  selectedId = card.dataset.id;
-
-  const listing = selectedListing();
-  if (!listing) return;
-
-  occupants = listing.maxOccupants;
+  selectListing(card.dataset.id);
+  if (!selectedListing()) return;
 
   results();
   renderDetail();
@@ -237,12 +204,12 @@ resultsList.addEventListener("click", (event) => {
 
 detailsContainer.addEventListener("input", (e) => {
   if (e.target.id === "occupants-demo") {
-    occupants = Number(e.target.value);
+    setOccupants(e.target.value);
     updateBreakdown();
   }
 
   if (e.target.id === "transport-demo") {
-    includeTransport = e.target.checked;
+    toggleTransport(e.target.checked);
     updateBreakdown();
   }
 });
@@ -250,8 +217,15 @@ detailsContainer.addEventListener("input", (e) => {
 searchForm.addEventListener("submit", (e) => {
   e.preventDefault();
 });
-fieldInput.addEventListener("input", applyFilters);
-maxRentInput.addEventListener("input", applyFilters);
 
-applyFilters();
+fieldInput.addEventListener("input", () => {
+  setSearchTerm(fieldInput.value);
+  results();
+});
+
+maxRentInput.addEventListener("input", () => {
+  setMaxRent(maxRentInput.value);
+  results();
+});
+
 results();
