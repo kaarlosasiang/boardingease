@@ -1,9 +1,16 @@
-import * as model from "./model.js";
-import searchView from "./searchView.js";
+import { listings } from "./data.js";
 
-const resultsList = document.querySelector("#results-list");
-const detailsContainer = document.querySelector("#detail-panel");
+// ELEMENTS
+const resultsList = document.querySelector(".results__list");
+const detailsContainer = document.querySelector(".detail");
+const searchCount = document.querySelector(".search__count");
+const fieldInput = document.querySelector(".field__input");
+const maxRentInput = document.querySelector("#max-rent");
+const searchForm = document.querySelector("#search-form");
+const sharingWithInput = document.querySelector("#sharing-with");
 
+// STATE
+let newListings = listings;
 let selectedId = null;
 let occupants = 1;
 let includeTransport = false;
@@ -16,19 +23,33 @@ const peso = new Intl.NumberFormat("en-PH", {
   maximumFractionDigits: 0,
 });
 
+const applyFilters = () => {
+  const query = fieldInput.value.toLowerCase().trim();
+  const maxRent = maxRentInput.value;
+
+  newListings = listings.filter((listing) => {
+    const matchesQuery =
+      query === "" || listing.name.toLowerCase().includes(query);
+
+    const matchesRent =
+      maxRent === "" || listing.monthlyRent <= Number(maxRent);
+
+    return matchesQuery && matchesRent;
+  });
+
+  results();
+};
+
 const sumUtilities = ({ electricity = 0, water = 0, internet = 0 }) =>
   electricity + water + internet;
 
 const calculateCostPerHead = (listing, people, withTransport) => {
-  if (!Number.isInteger(people) || people < 1) {
-    throw new Error("Number of occupants must be a whole number, at least 1.");
-  }
-
-  if (people > listing.maxOccupants) {
+  if (!Number.isInteger(people) || people < 1)
+    throw new Error("Number od occupants must be a whole number, at least 1.");
+  if (people > listing.maxOccupants)
     throw new Error(
-      `This listing allows at most ${listing.maxOccupants} occupants.`,
+      `This listing allows at most ${listing.maxOccupants} occupants`,
     );
-  }
 
   const rentPerHead = listing.monthlyRent / people;
 
@@ -44,11 +65,13 @@ const calculateCostPerHead = (listing, people, withTransport) => {
     rentPerHead,
     utilitiesPerHead,
     transportPerHead,
-    totalPerHead: rentPerHead + utilitiesPerHead + transportPerHead,
+    totalPerHead: rentPerHead + utilitiesPerHead,
+    transportPerHead,
   };
 };
 
 const markupGenerator = (listing) => {
+  // Gi destructure nato dire ang object
   const {
     id,
     name,
@@ -56,19 +79,26 @@ const markupGenerator = (listing) => {
     monthlyRent,
     maxOccupants,
     utilitiesIncluded,
+    estimatedUtilities,
     distanceToCampusKm,
+    fareOneWay,
+    amenities,
   } = listing;
 
   const utilitiesTag = utilitiesIncluded
-    ? `<span class="tag">Utilities included</span>`
-    : `<span class="tag tag--utilities">Utilities extra</span>`;
+    ? `<span class="tag tag--utilities"
+                      >Utilities extra</span
+                    >`
+    : `<span class="tag tag--utilities"
+                      >No Utilities extra</span
+                    >`;
 
   return `<li>
               <button
                 class="card"
                 type="button"
                 data-id="${id}"
-                aria-pressed="${id === selectedId}"
+                aria-pressed="false"
               >
                 <img
                   class="card__image"
@@ -80,46 +110,49 @@ const markupGenerator = (listing) => {
                 />
                 <span>
                   <span class="card__name">${name}</span>
-                  <span class="card__meta">${barangay} &middot; ${distanceToCampusKm} km from campus &middot; up to ${maxOccupants}</span>
-                  <span class="card__rent">${peso.format(monthlyRent)} / month</span>
-                  <span class="tags">${utilitiesTag}</span>
+                  <span class="card__meta"
+                    >${barangay} &middot; ${distanceToCampusKm} km from campus &middot; up to 4</span
+                  >
+                  <span class="card__rent">&#8369;${monthlyRent} / month</span>
+                  <span class="tags"
+                    >
+                    ${utilitiesTag}</span
+                  >
                 </span>
               </button>
             </li>`;
 };
 
 const results = () => {
-  searchView.updateCount(model.state.filtered.length);
+  if (newListings.length === 0) {
+    resultsList.innerHTML = `<li class="empty">
+              No listings match that search. Try a barangay name.
+            </li>`;
 
-  if (model.state.filtered.length === 0) {
-    resultsList.innerHTML = `<li class="empty">No listings match that search.</li>`;
-    return;
+    searchCount.textContent = "0 listings found";
   }
 
-  resultsList.innerHTML = model.state.filtered.map(markupGenerator).join("");
+  resultsList.innerHTML = newListings.map(markupGenerator).join("");
 };
 
 const breakdownContent = (listing) => {
-  try {
-    const { rentPerHead, utilitiesPerHead, transportPerHead, totalPerHead } =
-      calculateCostPerHead(listing, occupants, includeTransport);
+  const { rentPerHead, utilitiesPerHead, transportPerHead, totalPerHead } =
+    calculateCostPerHead(listing, occupants, includeTransport);
 
-    return `
-            <p class="breakdown__line">
-              <span>Rent</span><span>${peso.format(rentPerHead)}</span>
-            </p>
-            <p class="breakdown__line">
-              <span>Utilities</span><span>${peso.format(utilitiesPerHead)}</span>
-            </p>
-            <p class="breakdown__line">
-              <span>Transport</span><span>${peso.format(transportPerHead)}</span>
-            </p>
-            <p class="breakdown__total">
-              <span>Per person</span><span>${peso.format(totalPerHead)}</span>
-            </p>`;
-  } catch (err) {
-    return `<p class="error">${err.message}</p>`;
-  }
+  return `
+    <p class="breakdown__line">
+      <span>Rent</span><span>${peso.format(rentPerHead)}</span>
+    </p>
+    <p class="breakdown__line">
+      <span>Utilities</span><span>${peso.format(utilitiesPerHead)}</span>
+    </p>
+    <p class="breakdown__line">
+      <span>Transport</span><span>${peso.format(transportPerHead)}</span>
+    </p>
+    <p class="breakdown__total">
+      <span>Per person</span><span>${peso.format(totalPerHead)}</span>
+    </p>
+    `;
 };
 
 const detailMarkUpGenerator = (listing) => {
@@ -145,18 +178,18 @@ const detailMarkUpGenerator = (listing) => {
 
             <div class="splitter__row">
               <label for="transport-demo">Include daily fare</label>
-              <input type="checkbox" id="transport-demo" ${
-                includeTransport ? "checked" : ""
-              } />
+              <input type="checkbox" id="transport-demo" ${includeTransport ? "checked" : ""} />
             </div>
           </fieldset>
 
-          <div class="breakdown">${breakdownContent(listing)}</div>
+          <div class="breakdown">
+            ${breakdownContent(listing)}
+          </div>        
   `;
 };
 
 const selectedListing = () =>
-  model.state.listings.find((item) => item.id === selectedId);
+  listings.find((listing) => listing.id === selectedId);
 
 const renderDetail = () => {
   if (!selectedId) {
@@ -184,8 +217,11 @@ const updateBreakdown = () => {
   breakdown.innerHTML = breakdownContent(listing);
 };
 
+// EVENT LISTENERS
+
 resultsList.addEventListener("click", (event) => {
   const card = event.target.closest(".card");
+
   if (!card) return;
 
   selectedId = card.dataset.id;
@@ -199,44 +235,23 @@ resultsList.addEventListener("click", (event) => {
   renderDetail();
 });
 
-detailsContainer.addEventListener("input", (event) => {
-  if (event.target.id === "occupants-demo") {
-    occupants = Number(event.target.value);
+detailsContainer.addEventListener("input", (e) => {
+  if (e.target.id === "occupants-demo") {
+    occupants = Number(e.target.value);
     updateBreakdown();
   }
 
-  if (event.target.id === "transport-demo") {
-    includeTransport = event.target.checked;
+  if (e.target.id === "transport-demo") {
+    includeTransport = e.target.checked;
     updateBreakdown();
   }
 });
 
-/* ---------------------------------------------------------------
-   SEARCH -- this is the part that's new.
-   No more fieldInput.addEventListener down here. searchView reports
-   what the user typed; these two functions tell the model to refilter,
-   then tell the page to redraw. Same two-step shape you'll see again
-   in every controller function from now on: change the model, then
-   render from it.
-   --------------------------------------------------------------- */
+searchForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+});
+fieldInput.addEventListener("input", applyFilters);
+maxRentInput.addEventListener("input", applyFilters);
 
-const controlSearch = (term) => {
-  model.setSearchTerm(term);
-  results();
-};
-
-const controlMaxRent = (value) => {
-  model.setMaxRent(value);
-  results();
-};
-
-searchView.addSearchHandler(controlSearch);
-searchView.addMaxRentHandler(controlMaxRent);
-searchView.addHandlerSubmit();
-
-/* ---------------------------------------------------------------
-   START
-   --------------------------------------------------------------- */
-
+applyFilters();
 results();
-renderDetail();
