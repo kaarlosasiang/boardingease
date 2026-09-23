@@ -1,5 +1,5 @@
-import { listings } from "./data.js";
-
+import * as model from "./model.js";
+import searchView from "./searchView.js";
 // ELEMENTS
 const resultsList = document.querySelector(".results__list");
 const detailsContainer = document.querySelector(".detail");
@@ -10,7 +10,6 @@ const searchForm = document.querySelector("#search-form");
 const sharingWithInput = document.querySelector("#sharing-with");
 
 // STATE
-let newListings = listings;
 let selectedId = null;
 let occupants = 1;
 let includeTransport = false;
@@ -22,23 +21,6 @@ const peso = new Intl.NumberFormat("en-PH", {
   currency: "PHP",
   maximumFractionDigits: 0,
 });
-
-const applyFilters = () => {
-  const query = fieldInput.value.toLowerCase().trim();
-  const maxRent = maxRentInput.value;
-
-  newListings = listings.filter((listing) => {
-    const matchesQuery =
-      query === "" || listing.name.toLowerCase().includes(query);
-
-    const matchesRent =
-      maxRent === "" || listing.monthlyRent <= Number(maxRent);
-
-    return matchesQuery && matchesRent;
-  });
-
-  results();
-};
 
 const sumUtilities = ({ electricity = 0, water = 0, internet = 0 }) =>
   electricity + water + internet;
@@ -124,15 +106,15 @@ const markupGenerator = (listing) => {
 };
 
 const results = () => {
-  if (newListings.length === 0) {
+  searchView.renderCount(model.state.filtered.length);
+
+  if (model.state.filtered.length === 0) {
     resultsList.innerHTML = `<li class="empty">
               No listings match that search. Try a barangay name.
             </li>`;
-
-    searchCount.textContent = "0 listings found";
   }
 
-  resultsList.innerHTML = newListings.map(markupGenerator).join("");
+  resultsList.innerHTML = model.state.filtered.map(markupGenerator).join("");
 };
 
 const breakdownContent = (listing) => {
@@ -247,11 +229,18 @@ detailsContainer.addEventListener("input", (e) => {
   }
 });
 
-searchForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-});
-fieldInput.addEventListener("input", applyFilters);
-maxRentInput.addEventListener("input", applyFilters);
+const searchController = (term) => {
+  model.setSearchTerm(term);
+  results();
+};
 
-applyFilters();
+const maxRentController = (value) => {
+  model.setMaxRent(value);
+  results();
+};
+
+searchView.addSearchHandler(searchController);
+searchView.addMaxRentHandler(maxRentController);
+searchView.addFormHandler();
+
 results();
