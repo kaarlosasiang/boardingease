@@ -21,7 +21,7 @@ const searchController = (term) => {
 
 const maxRentController = (value) => {
   model.setMaxRent(value);
-  // TODO 4
+  // TODO 4: call the right controller
 };
 
 const init = () => {
